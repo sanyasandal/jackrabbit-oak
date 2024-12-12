@@ -253,7 +253,7 @@ public class UUIDConflictDetector implements AutoCloseable {
     private void resolveConflict(String sourcePath, String targetPath) throws IOException {
         boolean isMetadataMatch = compareMetadata(sourcePath, targetPath);
         log.info("metadata match for source path: {}, target path: {} isMetadataMatch: {}", sourcePath, targetPath, isMetadataMatch);
-        if (!isMetadataMatch) {
+        if (isMetadataMatch) {
         // proceed with Binary Comparison
           NodeState sourceNode = getNodeAtPath(sourceStore.getRoot(), sourcePath);
           NodeState targetNode = getNodeAtPath(targetStore.getRoot(), targetPath);
@@ -287,7 +287,7 @@ public class UUIDConflictDetector implements AutoCloseable {
         Map<String, Object> targetMetadata = fetchMetadata(targetPath, targetStore);
         targetMetadata.putAll(fetchMetadata(targetPath + "/jcr:content/metadata", targetStore));
         sourceMetadata.putAll(fetchMetadata(sourcePath + "/jcr:content/metadata", sourceStore));
-        List<String> properties = Arrays.asList("jcr:primaryType", "jcr:mixinTypes", "dam:size", "dam:MIMEtype", "dam:FileFormat");
+        List<String> properties = Arrays.asList("jcr:primaryType", "jcr:mixinTypes", "dam:size", "dam:MIMEtype", "dam:Fileformat");
         return properties.stream().allMatch(property -> {
             Object sourceValue = sourceMetadata.get(property);
             Object targetValue = targetMetadata.get(property);
@@ -317,7 +317,11 @@ public class UUIDConflictDetector implements AutoCloseable {
             return metadata;
         }
         node.getProperties().forEach(property -> {
-            metadata.put(property.getName(), property.getValue(property.getType()));
+            try {
+                metadata.put(property.getName(), property.getValue(property.getType()));
+            } catch (Exception e) {
+                log.error("Error while fetching metadata for property: {}", property.getName(), e);
+            }
         });
         return metadata;
     }
