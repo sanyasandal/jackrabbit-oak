@@ -1,7 +1,10 @@
 package org.apache.jackrabbit.oak.upgrade;
 
+import java.io.InputStream;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.jackrabbit.oak.api.PropertyState;
+import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.commons.sort.ExternalSort;
 import org.apache.jackrabbit.oak.spi.state.ChildNodeEntry;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
@@ -25,6 +28,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import javax.jcr.Node;
 
 public class UUIDConflictDetector implements AutoCloseable {
 
@@ -109,7 +113,7 @@ public class UUIDConflictDetector implements AutoCloseable {
         }
 
         Set<String> uniqueIncludePaths = Arrays.stream(includePaths).filter(StringUtils::isNotBlank)
-                .collect(Collectors.toSet());
+          .collect(Collectors.toSet());
         Set<String> dedupePaths = new HashSet<>();
 
         // remove child path if parent path is present
@@ -175,8 +179,8 @@ public class UUIDConflictDetector implements AutoCloseable {
         Path uuidConflictFilePath = Paths.get(dir.getAbsolutePath(), "uuid_conflicts_" + getTimeStamp() + ".txt");
         log.info("uuid conflict file: {}", uuidConflictFilePath.getFileName());
         try (BufferedReader sourceReader = Files.newBufferedReader(sourceFile.toPath());
-             BufferedReader targetReader = Files.newBufferedReader(targetFile.toPath());
-             BufferedWriter conflictWriter = Files.newBufferedWriter(uuidConflictFilePath)) {
+          BufferedReader targetReader = Files.newBufferedReader(targetFile.toPath());
+          BufferedWriter conflictWriter = Files.newBufferedWriter(uuidConflictFilePath)) {
 
             String sourceLine = sourceReader.readLine();
             String targetLine = targetReader.readLine();
@@ -197,6 +201,15 @@ public class UUIDConflictDetector implements AutoCloseable {
                 } else {
                     if (!StringUtils.equals(sourcePath, targetPath)) {
                         log.info("conflict found for uuid: {}, source path: {}, target path: {}", sourceUUID, sourcePath, targetPath);
+                        NodeState sourceNode = getNodeAtPath(sourceStore.getRoot(), sourcePath);
+                        NodeState targetNode = getNodeAtPath(targetStore.getRoot(), targetPath);
+
+                        if (isImage(sourceNode) && isImage(targetNode)) {
+                            try (InputStream sourceStream = getBinaryContent(sourceNode);
+                              InputStream targetStream = getBinaryContent(targetNode)) {
+                                //send to image comparison service
+                            }
+                        }
                         String uuidWithPaths = sourceUUID + ": " + sourcePath + " " + targetPath;
                         conflictWriter.write(uuidWithPaths);
                         conflictWriter.newLine();
@@ -207,6 +220,21 @@ public class UUIDConflictDetector implements AutoCloseable {
             }
         }
         log.info("uuid conflict comparison in {}, {} files completed in: {} ms", sourceFile.getName(), targetFile.getName(), System.currentTimeMillis() - startTime);
+    }
+
+    private boolean isImage(NodeState node) {
+        NodeState metadataNode = node.getChildNode("jcr:content").getChildNode("metadata");
+        PropertyState mimeTypeProperty = metadataNode.getProperty("dam:MIMEtype");
+        return mimeTypeProperty != null && "image/png".equals(mimeTypeProperty.getValue(Type.STRING));
+    }
+
+    private InputStream getBinaryContent(NodeState node) {
+        NodeState contentNode = node.getChildNode("jcr:content");
+        PropertyState binaryProperty = contentNode.getProperty("jcr:data");
+        if (binaryProperty != null && binaryProperty.getType() == Type.BINARY) {
+            return binaryProperty.getValue(Type.BINARY).getNewStream();
+        }
+        return null;
     }
 
     public long getTimeStamp() {
