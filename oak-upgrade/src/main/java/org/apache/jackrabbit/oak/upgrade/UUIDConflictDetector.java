@@ -3,9 +3,12 @@ package org.apache.jackrabbit.oak.upgrade;
 import java.io.InputStream;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.jackrabbit.api.binary.BinaryDownload;
+import org.apache.jackrabbit.api.binary.BinaryDownloadOptions;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.commons.sort.ExternalSort;
+import org.apache.jackrabbit.oak.segment.SegmentBlob;
 import org.apache.jackrabbit.oak.spi.state.ChildNodeEntry;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
@@ -16,6 +19,8 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -28,7 +33,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import javax.jcr.Binary;
 import javax.jcr.Node;
+import javax.jcr.RepositoryException;
 
 public class UUIDConflictDetector implements AutoCloseable {
 
@@ -207,6 +214,7 @@ public class UUIDConflictDetector implements AutoCloseable {
                         if (isImage(sourceNode) && isImage(targetNode)) {
                             try (InputStream sourceStream = getBinaryContent(sourceNode);
                               InputStream targetStream = getBinaryContent(targetNode)) {
+                                log.info("source stream: {}, target stream: {}", sourceStream, targetStream);
                                 //send to image comparison service
                             }
                         }
@@ -228,15 +236,32 @@ public class UUIDConflictDetector implements AutoCloseable {
         return mimeTypeProperty != null && "image/png".equals(mimeTypeProperty.getValue(Type.STRING));
     }
 
-    private InputStream getBinaryContent(NodeState node) {
+    private InputStream getBinaryContent(NodeState node) throws IOException {
+        log.info("getting binary content for node: {}", node);
         NodeState contentNode = node.getChildNode("jcr:content");
-        PropertyState binaryProperty = contentNode.getProperty("jcr:data");
-        if (binaryProperty != null && binaryProperty.getType() == Type.BINARY) {
-            return binaryProperty.getValue(Type.BINARY).getNewStream();
+        log.info("content node: {}", contentNode);
+        NodeState rendition = contentNode.getChildNode("renditions");
+        log.info("rendition: {}", rendition);
+        NodeState originalRendition = rendition.getChildNode("original");
+        log.info("original rendition: {}", originalRendition);
+        NodeState originalRenditionChild = originalRendition.getChildNode("jcr:content");
+        log.info("original rendition child: {}", originalRenditionChild);
+
+        PropertyState binaryState = originalRenditionChild.getProperty("jcr:data");
+        log.info("binary state: {}", binaryState);
+        if (binaryState != null && binaryState.getType() == Type.BINARY) {
+            Object binaryValue = binaryState.getValue(Type.BINARY);
+            if (binaryValue instanceof SegmentBlob) {
+                SegmentBlob segmentBlob = (SegmentBlob) binaryValue;
+                log.info("segment blob: {}", segmentBlob);
+                return segmentBlob.getNewStream();
+            } else {
+                log.error("binary value is not an instance of SegmentBlob: {}", binaryValue.getClass());
+            }
         }
+        log.info("unable to retrieve binary content");
         return null;
     }
-
     public long getTimeStamp() {
         return timeStamp == 0L ? Instant.now().toEpochMilli() : timeStamp;
     }
