@@ -1,5 +1,7 @@
 package org.apache.jackrabbit.oak.upgrade;
 
+import ai.djl.ModelException;
+import ai.djl.translate.TranslateException;
 import java.io.InputStream;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -249,8 +251,10 @@ public class UUIDConflictDetector implements AutoCloseable {
         return null;
     }
     private void resolveConflict(String sourcePath, String targetPath) throws IOException {
-      boolean isMetadataMatch = compareMetadata(sourcePath, targetPath);
-      if (isMetadataMatch) {
+     // boolean isMetadataMatch = compareMetadata(sourcePath, targetPath);
+        boolean isMetadataMatch = true;
+
+        if (isMetadataMatch) {
         // proceed with Binary Comparison
           NodeState sourceNode = getNodeAtPath(sourceStore.getRoot(), sourcePath);
           NodeState targetNode = getNodeAtPath(targetStore.getRoot(), targetPath);
@@ -259,7 +263,17 @@ public class UUIDConflictDetector implements AutoCloseable {
               try (InputStream sourceStream = getBinaryContent(sourceNode);
                    InputStream targetStream = getBinaryContent(targetNode)) {
                   log.info("source stream: {}, target stream: {}", sourceStream, targetStream);
-
+                  if (sourceStream != null && targetStream != null) {
+                      // Send to image comparison service/
+                      ImageEmbeddingComparison.compareImages(sourceStream, targetStream);
+                      log.info("Image comparison completed for source and target images");
+                  } else {
+                      log.warn("Failed to fetch InputStream for source or target image. SourceStream: {}, TargetStream: {}", sourceStream, targetStream);
+                  }
+              } catch (ModelException e) {
+                  log.warn("Failed to fetch InputStream for source or target image. SourceStream");
+              } catch (TranslateException e) {
+                  log.warn("Failed to fetch InputStream for source or target image. SourceStream");
               }
           }
 
