@@ -2,6 +2,7 @@ package org.apache.jackrabbit.oak.upgrade;
 
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.commons.sort.ExternalSort;
 import org.apache.jackrabbit.oak.spi.state.ChildNodeEntry;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
@@ -17,13 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class UUIDConflictDetector implements AutoCloseable {
@@ -200,6 +195,7 @@ public class UUIDConflictDetector implements AutoCloseable {
                         String uuidWithPaths = sourceUUID + ": " + sourcePath + " " + targetPath;
                         conflictWriter.write(uuidWithPaths);
                         conflictWriter.newLine();
+                        resolveConflict(sourcePath, targetPath);
                     }
                     sourceLine = sourceReader.readLine();
                     targetLine = targetReader.readLine();
@@ -207,6 +203,36 @@ public class UUIDConflictDetector implements AutoCloseable {
             }
         }
         log.info("uuid conflict comparison in {}, {} files completed in: {} ms", sourceFile.getName(), targetFile.getName(), System.currentTimeMillis() - startTime);
+    }
+
+    private void resolveConflict(String sourcePath, String targetPath) {
+      boolean isMetadataMatch = compareMetadata(sourcePath, targetPath);
+      if (isMetadataMatch) {
+        // proceed with Binary Comparison
+      } else {
+        log.info("metadata mismatch for source path: {}, target path: {}", sourcePath, targetPath);
+      }
+    }
+
+    private boolean compareMetadata(String sourcePath, String targetPath) {
+      Map<String, String> sourceMetadata = fetchMetadata(sourcePath, sourceStore);
+      Map<String, String> targetMetadata = fetchMetadata(targetPath, targetStore);
+      List<String> properties = Arrays.asList("jcr:primaryType", "jcr:mixinTypes", "dam:size", "dam:MIMEType", "dam:FileFormat");
+      return properties.stream().allMatch(property -> {
+        String sourceValue = sourceMetadata.get(property);
+        String targetValue = targetMetadata.get(property);
+        return StringUtils.equals(sourceValue, targetValue);
+      });
+    }
+
+    private Map<String, String> fetchMetadata(String path, NodeStore nodeStore) {
+      Map<String, String> metadata = new HashMap<>();
+      NodeState root = nodeStore.getRoot();
+      NodeState node = getNodeAtPath(root, path);
+      node.getProperties().forEach(property -> {
+        metadata.put(property.getName(), property.getValue(Type.NAME));
+      });
+      return metadata;
     }
 
     public long getTimeStamp() {
