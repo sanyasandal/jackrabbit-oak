@@ -7,6 +7,7 @@ import org.apache.jackrabbit.api.binary.BinaryDownload;
 import org.apache.jackrabbit.api.binary.BinaryDownloadOptions;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
+import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.commons.sort.ExternalSort;
 import org.apache.jackrabbit.oak.segment.SegmentBlob;
 import org.apache.jackrabbit.oak.spi.state.ChildNodeEntry;
@@ -25,13 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import javax.jcr.Binary;
 import javax.jcr.Node;
@@ -208,19 +203,10 @@ public class UUIDConflictDetector implements AutoCloseable {
                 } else {
                     if (!StringUtils.equals(sourcePath, targetPath)) {
                         log.info("conflict found for uuid: {}, source path: {}, target path: {}", sourceUUID, sourcePath, targetPath);
-                        NodeState sourceNode = getNodeAtPath(sourceStore.getRoot(), sourcePath);
-                        NodeState targetNode = getNodeAtPath(targetStore.getRoot(), targetPath);
-
-                        if (isImage(sourceNode) && isImage(targetNode)) {
-                            try (InputStream sourceStream = getBinaryContent(sourceNode);
-                              InputStream targetStream = getBinaryContent(targetNode)) {
-                                log.info("source stream: {}, target stream: {}", sourceStream, targetStream);
-                                //send to image comparison service
-                            }
-                        }
                         String uuidWithPaths = sourceUUID + ": " + sourcePath + " " + targetPath;
                         conflictWriter.write(uuidWithPaths);
                         conflictWriter.newLine();
+                        resolveConflict(sourcePath, targetPath);
                     }
                     sourceLine = sourceReader.readLine();
                     targetLine = targetReader.readLine();
@@ -262,6 +248,47 @@ public class UUIDConflictDetector implements AutoCloseable {
         log.info("unable to retrieve binary content");
         return null;
     }
+    private void resolveConflict(String sourcePath, String targetPath) throws IOException {
+      boolean isMetadataMatch = compareMetadata(sourcePath, targetPath);
+      if (isMetadataMatch) {
+        // proceed with Binary Comparison
+          NodeState sourceNode = getNodeAtPath(sourceStore.getRoot(), sourcePath);
+          NodeState targetNode = getNodeAtPath(targetStore.getRoot(), targetPath);
+
+          if (isImage(sourceNode) && isImage(targetNode)) {
+              try (InputStream sourceStream = getBinaryContent(sourceNode);
+                   InputStream targetStream = getBinaryContent(targetNode)) {
+                  log.info("source stream: {}, target stream: {}", sourceStream, targetStream);
+
+              }
+          }
+
+      } else {
+        log.info("metadata mismatch for source path: {}, target path: {}", sourcePath, targetPath);
+      }
+    }
+
+    private boolean compareMetadata(String sourcePath, String targetPath) {
+      Map<String, String> sourceMetadata = fetchMetadata(sourcePath, sourceStore);
+      Map<String, String> targetMetadata = fetchMetadata(targetPath, targetStore);
+      List<String> properties = Arrays.asList("jcr:primaryType", "jcr:mixinTypes", "dam:size", "dam:MIMEType", "dam:FileFormat");
+      return properties.stream().allMatch(property -> {
+        String sourceValue = sourceMetadata.get(property);
+        String targetValue = targetMetadata.get(property);
+        return StringUtils.equals(sourceValue, targetValue);
+      });
+    }
+
+    private Map<String, String> fetchMetadata(String path, NodeStore nodeStore) {
+      Map<String, String> metadata = new HashMap<>();
+      NodeState root = nodeStore.getRoot();
+      NodeState node = getNodeAtPath(root, path);
+      node.getProperties().forEach(property -> {
+        metadata.put(property.getName(), property.getValue(Type.NAME));
+      });
+      return metadata;
+    }
+
     public long getTimeStamp() {
         return timeStamp == 0L ? Instant.now().toEpochMilli() : timeStamp;
     }
