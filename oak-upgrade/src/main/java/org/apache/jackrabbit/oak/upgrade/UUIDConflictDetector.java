@@ -254,31 +254,30 @@ public class UUIDConflictDetector implements AutoCloseable {
         boolean isMetadataMatch = compareMetadata(sourcePath, targetPath);
         log.info("metadata match for source path: {}, target path: {} isMetadataMatch: {}", sourcePath, targetPath, isMetadataMatch);
         if (isMetadataMatch) {
-        // proceed with Binary Comparison
-          NodeState sourceNode = getNodeAtPath(sourceStore.getRoot(), sourcePath);
-          NodeState targetNode = getNodeAtPath(targetStore.getRoot(), targetPath);
+            // proceed with Binary Comparison
+            NodeState sourceNode = getNodeAtPath(sourceStore.getRoot(), sourcePath);
+            NodeState targetNode = getNodeAtPath(targetStore.getRoot(), targetPath);
 
-          if (isImage(sourceNode) && isImage(targetNode)) {
-              try (InputStream sourceStream = getBinaryContent(sourceNode);
-                   InputStream targetStream = getBinaryContent(targetNode)) {
-                  log.info("source stream: {}, target stream: {}", sourceStream, targetStream);
-                  if (sourceStream != null && targetStream != null) {
-                      // Send to image comparison service/
-                      ImageEmbeddingComparison.compareImages(sourceStream, targetStream);
-                      log.info("Image comparison completed for source and target images");
-                  } else {
-                      log.warn("Failed to fetch InputStream for source or target image. SourceStream: {}, TargetStream: {}", sourceStream, targetStream);
-                  }
-              } catch (ModelException e) {
-                  log.warn("Failed to fetch InputStream for source or target image. SourceStream");
-              } catch (TranslateException e) {
-                  log.warn("Failed to fetch InputStream for source or target image. SourceStream");
-              }
-          }
+            if (isImage(sourceNode) && isImage(targetNode)) {
+                try (InputStream sourceStream = getBinaryContent(sourceNode);
+                  InputStream targetStream = getBinaryContent(targetNode)) {
+                    log.info("source stream: {}, target stream: {}", sourceStream, targetStream);
+                    if (sourceStream != null && targetStream != null) {
+                        // Send to image comparison service/
+                        ImageEmbeddingComparison.compareImages(sourceStream, targetStream);
+                        log.info("Image comparison completed for source and target images");
+                    } else {
+                        log.warn("Failed to fetch InputStream for source or target image. SourceStream: {}, TargetStream: {}", sourceStream, targetStream);
+                    }
+                } catch (Exception e) {
+                    log.warn(e.getMessage());
+                    log.warn("Failed to fetch InputStream for source or target image. SourceStream");
+                }
+            }
 
-      } else {
-        log.info("metadata mismatch for source path: {}, target path: {}", sourcePath, targetPath);
-      }
+        } else {
+            log.info("metadata mismatch for source path: {}, target path: {}", sourcePath, targetPath);
+        }
     }
 
     private boolean compareMetadata(String sourcePath, String targetPath) {
