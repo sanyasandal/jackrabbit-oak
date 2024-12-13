@@ -22,70 +22,81 @@ import ai.djl.translate.TranslatorContext;
 import java.io.FileInputStream;
 import java.io.InputStream;
 
+import java.io.*;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.util.logging.Logger;
+
 public class ImageEmbeddingComparison {
 
-  public static void compareImages(InputStream inputStream1, InputStream inputStream2) throws Exception {
-    // Paths to your images
-//    InputStream inputStream1 = new FileInputStream("path_to_image1.jpg");
-//    InputStream inputStream2 = new FileInputStream("path_to_image2.jpg");
+  private static final Logger log = Logger.getLogger(ImageEmbeddingComparison.class.getName());
 
-    // Load images using DJL ImageFactory
-    Image img1 = ImageFactory.getInstance().fromInputStream(inputStream1);
-    Image img2 = ImageFactory.getInstance().fromInputStream(inputStream2);
+  public static void compareImages(String image1Path, String image2Path) {
+    // API URL
+    String apiUrl = "http://127.0.0.1:5000/compare";
 
+    //image1Path = "/Users/bwadhwa/Downloads/twishaDoc/surbheeadhar.jpg";
+    //image2Path = "/Users/bwadhwa/Downloads/twishaDoc/surbheeadhar.jpg";
+    // Construct the JSON payload
+    String jsonPayload = String.format(
+      "{\"image1_path\": \"%s\", \"image2_path\": \"%s\"}",
+      image1Path, image2Path
+    );
 
-    // Load the pre-trained ResNet model for feature extraction (ResNet50 or ResNet18, etc.)
-    Criteria<Image, NDArray> criteria = Criteria.builder()
-      .setTypes(Image.class, NDArray.class)
-      .optTranslator(new FeatureExtractionTranslator())
-      .build();
+    HttpURLConnection connection = null;
+    try {
+      // Create the URL object
+      URL url = new URL(apiUrl);
 
-    try (Model model = ModelZoo.loadModel(criteria)) {
-      // Create a predictor for feature extraction
-      try (Predictor<Image, NDArray> predictor = model.newPredictor(new FeatureExtractionTranslator())) {
-        // Extract features for both images
-        NDArray feature1 = predictor.predict(img1);
-        NDArray feature2 = predictor.predict(img2);
+      // Open the connection
+      connection = (HttpURLConnection) url.openConnection();
 
-        // Compute cosine similarity
-        float similarity = computeCosineSimilarity(feature1, feature2);
-        System.out.println("Cosine Similarity: " + similarity);
+      // Set the request method to POST
+      connection.setRequestMethod("POST");
+
+      // Set the request headers
+      connection.setRequestProperty("Content-Type", "application/json");
+      connection.setDoOutput(true);
+
+      // Write the JSON payload to the output stream
+      try (OutputStream os = connection.getOutputStream()) {
+        byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
+        os.write(input, 0, input.length);
       }
-    }
-  }
 
-  // Helper function to compute cosine similarity
-  private static float computeCosineSimilarity(NDArray a, NDArray b) {
-    float dotProduct = a.dot(b).getFloat();
-    float normA = a.norm().getFloat();
-    float normB = b.norm().getFloat();
-    return dotProduct / (normA * normB);
-  }
+      log.info("API Request: " + jsonPayload);
+      // Get the response code
+      int responseCode = connection.getResponseCode();
+      log.info("Response Code: " + responseCode);
 
-  // Translator for feature extraction using ResNet
-  private static class FeatureExtractionTranslator implements Translator<Image, NDArray> {
+      // Read the response from the input stream
+      try (BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+        String inputLine;
+        StringBuilder response = new StringBuilder();
+        while ((inputLine = in.readLine()) != null) {
+          response.append(inputLine);
+        }
 
-    @Override
-    public NDList processInput(TranslatorContext ctx, Image input) {
-      // Resize, convert to tensor, and normalize the image
-      NDArray array = input.toNDArray(ctx.getNDManager(), Image.Flag.COLOR);
-      array = array.toType(DataType.FLOAT32, false);
-      array = array.div(255f); // Normalize pixel values to [0, 1]
-      // array = Resize.resize(array, new Shape(224, 224, 3));
-      //array = Normalize.normalize(array, new float[]{0.485f, 0.456f, 0.406f},
-      //  new float[]{0.229f, 0.224f, 0.225f});
-      array = array.transpose(2, 0, 1); // Convert to CHW format for PyTorch
-      return new NDList(array.expandDims(0)); // Add batch dimension
-    }
+        // Log the response (for debugging)
+        log.info("API Response: " + response.toString());
 
-    @Override
-    public NDArray processOutput(TranslatorContext ctx, NDList list) {
-      return list.singletonOrThrow(); // Extract the model output
-    }
+        // Parse the similarity score from the JSON response
+        if (response.toString().contains("similarity_score")) {
+          String similarityScore = response.toString().split(":")[1].replace("}", "").replace("\"", "").trim();
+          log.info("Similarity Score: " + similarityScore);
+        } else {
+          log.warning("API response did not contain similarity score.");
+        }
 
-    @Override
-    public Batchifier getBatchifier() {
-      return null; // No batching needed
+      }
+
+    } catch (IOException e) {
+      log.severe("Error during API call: " + e.getMessage());
+      e.printStackTrace();
+    } finally {
+      if (connection != null) {
+        connection.disconnect();
+      }
     }
   }
 }

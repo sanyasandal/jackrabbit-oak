@@ -264,7 +264,27 @@ public class UUIDConflictDetector implements AutoCloseable {
                     log.info("source stream: {}, target stream: {}", sourceStream, targetStream);
                     if (sourceStream != null && targetStream != null) {
                         // Send to image comparison service/
-                        ImageEmbeddingComparison.compareImages(sourceStream, targetStream);
+                        File tmpDir = new File("/tmp/oakconflict");
+                        if (!tmpDir.exists()) {
+                            tmpDir.mkdirs();
+                        }
+                        File sourceFile = new File(tmpDir, "source_image.png");
+                        try (java.io.OutputStream outStream = new java.io.FileOutputStream(sourceFile)) {
+                            byte[] buffer = new byte[1024];
+                            int bytesRead;
+                            while ((bytesRead = sourceStream.read(buffer)) != -1) {
+                                outStream.write(buffer, 0, bytesRead);
+                            }
+                        }
+                        File targetFile = new File(tmpDir, "target_image.png");
+                        try (java.io.OutputStream outStream = new java.io.FileOutputStream(targetFile)) {
+                            byte[] buffer = new byte[1024];
+                            int bytesRead;
+                            while ((bytesRead = targetStream.read(buffer)) != -1) {
+                                outStream.write(buffer, 0, bytesRead);
+                            }
+                        }
+                        ImageEmbeddingComparison.compareImages(sourceFile.getAbsolutePath(), targetFile.getAbsolutePath());
                         log.info("Image comparison completed for source and target images");
                     } else {
                         log.warn("Failed to fetch InputStream for source or target image. SourceStream: {}, TargetStream: {}", sourceStream, targetStream);
