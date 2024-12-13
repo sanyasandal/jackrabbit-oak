@@ -251,9 +251,8 @@ public class UUIDConflictDetector implements AutoCloseable {
         return null;
     }
     private void resolveConflict(String sourcePath, String targetPath) throws IOException {
-     // boolean isMetadataMatch = compareMetadata(sourcePath, targetPath);
-        boolean isMetadataMatch = true;
-
+        boolean isMetadataMatch = compareMetadata(sourcePath, targetPath);
+        log.info("metadata match for source path: {}, target path: {} isMetadataMatch: {}", sourcePath, targetPath, isMetadataMatch);
         if (isMetadataMatch) {
         // proceed with Binary Comparison
           NodeState sourceNode = getNodeAtPath(sourceStore.getRoot(), sourcePath);
@@ -283,24 +282,48 @@ public class UUIDConflictDetector implements AutoCloseable {
     }
 
     private boolean compareMetadata(String sourcePath, String targetPath) {
-      Map<String, String> sourceMetadata = fetchMetadata(sourcePath, sourceStore);
-      Map<String, String> targetMetadata = fetchMetadata(targetPath, targetStore);
-      List<String> properties = Arrays.asList("jcr:primaryType", "jcr:mixinTypes", "dam:size", "dam:MIMEType", "dam:FileFormat");
-      return properties.stream().allMatch(property -> {
-        String sourceValue = sourceMetadata.get(property);
-        String targetValue = targetMetadata.get(property);
-        return StringUtils.equals(sourceValue, targetValue);
-      });
+        log.info("comparing metadata for source path: {}, target path: {}", sourcePath, targetPath);
+        Map<String, Object> sourceMetadata = fetchMetadata(sourcePath, sourceStore);
+        Map<String, Object> targetMetadata = fetchMetadata(targetPath, targetStore);
+        targetMetadata.putAll(fetchMetadata(targetPath + "/jcr:content/metadata", targetStore));
+        sourceMetadata.putAll(fetchMetadata(sourcePath + "/jcr:content/metadata", sourceStore));
+        List<String> properties = Arrays.asList("jcr:primaryType", "jcr:mixinTypes", "dam:size", "dam:MIMEtype", "dam:Fileformat");
+        return properties.stream().allMatch(property -> {
+            Object sourceValue = sourceMetadata.get(property);
+            Object targetValue = targetMetadata.get(property);
+            if (sourceValue instanceof PropertyState && targetValue instanceof PropertyState) {
+                return compareProperties((PropertyState) sourceValue, (PropertyState) targetValue);
+            } else {
+                return sourceValue != null && sourceValue.equals(targetValue);
+            }
+        });
     }
 
-    private Map<String, String> fetchMetadata(String path, NodeStore nodeStore) {
-      Map<String, String> metadata = new HashMap<>();
-      NodeState root = nodeStore.getRoot();
-      NodeState node = getNodeAtPath(root, path);
-      node.getProperties().forEach(property -> {
-        metadata.put(property.getName(), property.getValue(Type.NAME));
-      });
-      return metadata;
+    private boolean compareProperties(PropertyState property1, PropertyState property2) {
+        if (property1 == null || property2 == null) {
+            return false;
+        }
+        if (!property1.getType().equals(property2.getType())) {
+            return false;
+        }
+        return property1.getValue(property1.getType()).equals(property2.getValue(property2.getType()));
+    }
+
+    private Map<String, Object> fetchMetadata(String path, NodeStore nodeStore) {
+        Map<String, Object> metadata = new HashMap<>();
+        NodeState root = nodeStore.getRoot();
+        NodeState node = getNodeAtPath(root, path);
+        if (node == null) {
+            return metadata;
+        }
+        node.getProperties().forEach(property -> {
+            try {
+                metadata.put(property.getName(), property.getValue(property.getType()));
+            } catch (Exception e) {
+                log.error("Error while fetching metadata for property: {}", property.getName(), e);
+            }
+        });
+        return metadata;
     }
 
     public long getTimeStamp() {
