@@ -284,7 +284,7 @@ public class UUIDConflictDetector implements AutoCloseable {
                                 outStream.write(buffer, 0, bytesRead);
                             }
                         }
-                        ImageEmbeddingComparison.compareImages(sourceFile.getAbsolutePath(), targetFile.getAbsolutePath());
+                        ImageEmbeddingComparison.compareImages(sourceFile.getAbsolutePath(), targetFile.getAbsolutePath(),sourceStore,targetStore,sourcePath,targetPath);
                         log.info("Image comparison completed for source and target images");
                     } else {
                         log.warn("Failed to fetch InputStream for source or target image. SourceStream: {}, TargetStream: {}", sourceStream, targetStream);
